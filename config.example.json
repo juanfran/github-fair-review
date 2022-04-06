@@ -1,0 +1,23 @@
+{
+  "auth": "",
+  "github": {
+    "owner": "ownerRepo",
+    "repo": "repo"
+  },
+  "mattermostHook": "",
+  "users": [
+    {
+      "mention": "@susan",
+      "github": "susan.github",
+      "enabled": true
+    },
+    {
+      "mention": "@john",
+      "github": "john.github",
+      "enabled": false
+    }
+  ],
+  "excludeFromReview": [
+    "susan.github"
+  ]
+}
