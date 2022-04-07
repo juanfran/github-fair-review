@@ -105,8 +105,11 @@ async function run() {
     return fronts.includes(author);
   });
 
+  const assignedIds = [];
+
   pendingPrs.forEach((pr) => {
     console.log(authors);
+
     const user = getOlder(authors, pr.user.login);
 
     if (user) {
@@ -122,6 +125,8 @@ async function run() {
         reviewers: [user.name]
       });
 
+      assignedIds.push(pr.number);
+
       const command = `curl -i -X POST -H 'Content-Type: application/json' -d '{"text": "${msg}"}' https://chat.kaleidos.net/hooks/hqheets8ubyn7g3onr5jak94ya`;
       exec(command);
     }
@@ -129,16 +134,20 @@ async function run() {
 
 
   inProgressPrs.forEach((pr) => {
-    const users = getPrAssign(pr);
-    const now = new Date();
-    const prDate = new Date(pr.created_at);
-    const distance = formatDistance(prDate, now, { addSuffix: true });
-    const userNames = getMattermostNames(users);
+    if (!assignedIds.includes(pr.number)) {
+      const users = getPrAssign(pr);
+      const now = new Date();
+      const prDate = new Date(pr.created_at);
+      const distance = formatDistance(prDate, now, { addSuffix: true });
 
-    const msg = `${pr.html_url} assigned to ${userNames.join(', ')}, open ${distance}`;
+      const userNames = getMattermostNames(users);
 
-    const command = `curl -i -X POST -H 'Content-Type: application/json' -d '{"text": "${msg}"}' https://chat.kaleidos.net/hooks/hqheets8ubyn7g3onr5jak94ya`;
-    exec(command);
+      const msg = `${pr.html_url} assigned to ${userNames.join(', ')}, open ${distance}`;
+      console.log(msg);
+
+      const command = `curl -i -X POST -H 'Content-Type: application/json' -d '{"text": "${msg}"}' https://chat.kaleidos.net/hooks/hqheets8ubyn7g3onr5jak94ya`;
+      exec(command);
+    }
   });
 }
 
