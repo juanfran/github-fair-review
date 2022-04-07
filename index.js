@@ -1,8 +1,22 @@
 const { Octokit } = require('@octokit/rest');
 const { exec } = require('child_process');
 const { formatDistance } = require('date-fns');
+const config = require('./config.json');
 
 const fronts = ['rsanchezbalo', 'Xaviju', 'cocotime', 'juanfran'];
+
+function getMattermostNames(names) {
+  const mapName = {
+    'rsanchezbalo': '@ramiro',
+    'Xaviju': '@xaviju',
+    'cocotime': '@marina.lopez',
+    'juanfran': '@juanfran'
+  };
+
+  return names.map((name) => {
+    return mapName[name];
+  });
+}
 
 function getOlder(authorsLog, exclude) {
   let older = {
@@ -48,10 +62,8 @@ function getPrAssign(pr) {
 
 async function run() {
   // https://github.com/kaleidos-ventures/taiga
-
-  const octokit = new Octokit({
-    auth: '',
-  });
+  // https://github.com/settings/tokens (select: repo)
+  const octokit = new Octokit(config);
 
   const allPrs = await octokit.rest.pulls.list({
     owner: 'kaleidos-ventures',
@@ -99,7 +111,8 @@ async function run() {
 
     if (user) {
       authors = [user.name, ...authors];
-      const msg = `PR ${pr.number} by ${pr.user.login} assigned to ${user.name} ${pr.html_url}`;
+      const userName = getMattermostNames([user.name])[0];
+      const msg = `PR ${pr.number} by ${pr.user.login} assigned to ${userName} ${pr.html_url}`;
       console.log(msg);
 
       octokit.rest.pulls.requestReviewers({
@@ -119,9 +132,10 @@ async function run() {
     const users = getPrAssign(pr);
     const now = new Date();
     const prDate = new Date(pr.created_at);
-    const distance = formatDistance(prDate, now, { addSuffix: true })
+    const distance = formatDistance(prDate, now, { addSuffix: true });
+    const userNames = getMattermostNames(users);
 
-    const msg = `${pr.html_url} assigned to ${users.join(', ')}, open ${distance}`;
+    const msg = `${pr.html_url} assigned to ${userNames.join(', ')}, open ${distance}`;
 
     const command = `curl -i -X POST -H 'Content-Type: application/json' -d '{"text": "${msg}"}' https://chat.kaleidos.net/hooks/hqheets8ubyn7g3onr5jak94ya`;
     exec(command);
