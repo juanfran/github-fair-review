@@ -69,11 +69,11 @@ async function run() {
     owner: 'kaleidos-ventures',
     repo: 'taiga',
     state: 'all',
-    per_page: 10,
+    per_page: 30,
     page: 0,
     sort: 'created',
     direction: 'desc'
-  })
+  });
 
   const validPrs = allPrs.data.filter((pr) => {
     return fronts.includes(pr.user.login);
