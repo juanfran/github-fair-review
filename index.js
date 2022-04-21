@@ -90,16 +90,31 @@ async function run() {
 
   let authors = [];
 
-  validPrs.forEach((pr) => {
+  for (const pr of validPrs) {
+    const prAuthors = [];
     if (pr.assignee?.login) {
-      authors.push(pr.assignee?.login);
+      prAuthors.push(pr.assignee?.login);
     }
     if(pr.requested_reviewers?.length) {
       pr.requested_reviewers.forEach((requested_reviewer) => {
-        authors.push(requested_reviewer.login);
+        prAuthors.push(requested_reviewer.login);
       })
     }
-  });
+
+    if (!prAuthors.length) {
+      const prReviews = await octokit.rest.pulls.listReviews({
+        owner: 'kaleidos-ventures',
+        repo: 'taiga',
+        pull_number: pr.number,
+      });
+
+      prReviews.data.forEach((review) => {
+        prAuthors.push(review.user.login);
+      });
+    }
+
+    authors.push(...new Set(prAuthors));
+  };
 
   authors = authors.filter((author) => {
     return fronts.includes(author);
