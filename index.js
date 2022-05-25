@@ -60,6 +60,25 @@ function getPrAssign(pr) {
   return users;
 }
 
+async function getPendingPrs() {
+
+  const pendingPrs = validPrs.filter((pr) => {
+    return pr.state === 'open' && !pr.assignee && !pr.requested_reviewers.length && !pr.title.includes('WIP');
+    // return pr.state === 'open' && !pr.assignee && !pr.requested_reviewers.length;
+  }).filter(async (pr) => {
+
+    const prReviews = await octokit.rest.pulls.listReviews({
+      owner: 'kaleidos-ventures',
+      repo: 'taiga',
+      pull_number: pr.number,
+    });
+
+    reviews[pr.number] = prReviews;
+
+    return !prReviews.data.length;
+  });
+}
+
 async function run() {
   // https://github.com/kaleidos-ventures/taiga
   // https://github.com/settings/tokens (select: repo)
@@ -79,9 +98,25 @@ async function run() {
     return fronts.includes(pr.user.login);
   });
 
-  const pendingPrs = validPrs.filter((pr) => {
+  const reviews = {};
+
+  let pendingPrs = validPrs.filter((pr) => {
     return pr.state === 'open' && !pr.assignee && !pr.requested_reviewers.length && !pr.title.includes('WIP');
     // return pr.state === 'open' && !pr.assignee && !pr.requested_reviewers.length;
+  });
+
+  for (const pr of pendingPrs) {
+    const prReviews = await octokit.rest.pulls.listReviews({
+      owner: 'kaleidos-ventures',
+      repo: 'taiga',
+      pull_number: pr.number,
+    });
+
+    reviews[pr.number] = prReviews;
+  }
+
+  pendingPrs = pendingPrs.filter((pr) => {
+    return !reviews[pr.number].data.length;
   });
 
   const inProgressPrs = validPrs.filter((pr) => {
