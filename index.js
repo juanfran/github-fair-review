@@ -2,7 +2,7 @@ const { Octokit } = require('@octokit/rest');
 const { exec } = require('child_process');
 const { formatDistance } = require('date-fns');
 const config = require('./config.json');
-
+const reviews = {};
 const fronts = ['rsanchezbalo', 'Xaviju', 'cocotime', 'juanfran'];
 
 function getMattermostNames(names) {
@@ -57,6 +57,12 @@ function getPrAssign(pr) {
     });
   }
 
+  if (reviews[pr.number]) {
+    reviews[pr.number].data.forEach((review) => {
+      users.push(review.user.login);
+    });
+  }
+
   return users;
 }
 
@@ -97,8 +103,6 @@ async function run() {
   const validPrs = allPrs.data.filter((pr) => {
     return fronts.includes(pr.user.login);
   });
-
-  const reviews = {};
 
   let pendingPrs = validPrs.filter((pr) => {
     return pr.state === 'open' && !pr.assignee && !pr.requested_reviewers.length && !pr.title.includes('WIP');
