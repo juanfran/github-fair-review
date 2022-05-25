@@ -69,7 +69,7 @@ async function run() {
     owner: 'kaleidos-ventures',
     repo: 'taiga',
     state: 'all',
-    per_page: 30,
+    per_page: 20,
     page: 0,
     sort: 'created',
     direction: 'desc'
@@ -95,23 +95,24 @@ async function run() {
     if (pr.assignee?.login) {
       prAuthors.push(pr.assignee?.login);
     }
-    if(pr.requested_reviewers?.length) {
+
+    if (pr.requested_reviewers?.length) {
       pr.requested_reviewers.forEach((requested_reviewer) => {
         prAuthors.push(requested_reviewer.login);
       })
     }
 
-    if (!prAuthors.length) {
-      const prReviews = await octokit.rest.pulls.listReviews({
-        owner: 'kaleidos-ventures',
-        repo: 'taiga',
-        pull_number: pr.number,
-      });
+    const prReviews = await octokit.rest.pulls.listReviews({
+      owner: 'kaleidos-ventures',
+      repo: 'taiga',
+      pull_number: pr.number,
+    });
 
-      prReviews.data.forEach((review) => {
+    prReviews.data.forEach((review) => {
+      if (pr.user.login !== review.user.login) {
         prAuthors.push(review.user.login);
-      });
-    }
+      }
+    });
 
     authors.push(...new Set(prAuthors));
   };
@@ -167,3 +168,4 @@ async function run() {
 }
 
 run();
+
