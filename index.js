@@ -7,10 +7,10 @@ const fronts = ['rsanchezbalo', 'Xaviju', 'cocotime', 'juanfran'];
 
 function getMattermostNames(names) {
   const mapName = {
-    'rsanchezbalo': '@ramiro',
-    'Xaviju': '@xaviju',
-    'cocotime': '@marina.lopez',
-    'juanfran': '@juanfran'
+    rsanchezbalo: '@ramiro',
+    Xaviju: '@xaviju',
+    cocotime: '@marina.lopez',
+    juanfran: '@juanfran',
   };
 
   return names.map((name) => {
@@ -25,17 +25,17 @@ function getOlder(authorsLog, exclude) {
   };
 
   fronts
-  .filter((front) => front !== exclude)
-  .forEach((front) => {
-    const lastPr = [...authorsLog, ...fronts].indexOf(front);
+    .filter((front) => front !== exclude)
+    .forEach((front) => {
+      const lastPr = [...authorsLog, ...fronts].indexOf(front);
 
-    if (lastPr > older.position) {
-      older = {
-        position: lastPr,
-        name: front
-      };
-    }
-  });
+      if (lastPr > older.position) {
+        older = {
+          position: lastPr,
+          name: front,
+        };
+      }
+    });
 
   if (older.name === '') {
     return null;
@@ -67,37 +67,42 @@ function getPrAssign(pr) {
 }
 
 async function getPendingPrs() {
+  const pendingPrs = validPrs
+    .filter((pr) => {
+      return (
+        pr.state === 'open' &&
+        !pr.assignee &&
+        !pr.requested_reviewers.length &&
+        !pr.title.includes('WIP')
+      );
+      // return pr.state === 'open' && !pr.assignee && !pr.requested_reviewers.length;
+    })
+    .filter(async (pr) => {
+      const prReviews = await octokit.rest.pulls.listReviews({
+        owner: 'taigaio',
+        repo: 'taiga',
+        pull_number: pr.number,
+      });
 
-  const pendingPrs = validPrs.filter((pr) => {
-    return pr.state === 'open' && !pr.assignee && !pr.requested_reviewers.length && !pr.title.includes('WIP');
-    // return pr.state === 'open' && !pr.assignee && !pr.requested_reviewers.length;
-  }).filter(async (pr) => {
+      reviews[pr.number] = prReviews;
 
-    const prReviews = await octokit.rest.pulls.listReviews({
-      owner: 'kaleidos-ventures',
-      repo: 'taiga',
-      pull_number: pr.number,
+      return !prReviews.data.length;
     });
-
-    reviews[pr.number] = prReviews;
-
-    return !prReviews.data.length;
-  });
 }
 
 async function run() {
-  // https://github.com/kaleidos-ventures/taiga
+  // https://github.com/taigaio/taiga
   // https://github.com/settings/tokens (select: repo)
   const octokit = new Octokit(config);
 
   const allPrs = await octokit.rest.pulls.list({
-    owner: 'kaleidos-ventures',
+    owner: 'taigaio',
     repo: 'taiga',
     state: 'all',
     per_page: 20,
     page: 0,
     sort: 'created',
-    direction: 'desc'
+    direction: 'desc',
   });
 
   const validPrs = allPrs.data.filter((pr) => {
@@ -105,13 +110,18 @@ async function run() {
   });
 
   let pendingPrs = validPrs.filter((pr) => {
-    return pr.state === 'open' && !pr.assignee && !pr.requested_reviewers.length && !pr.title.includes('WIP');
+    return (
+      pr.state === 'open' &&
+      !pr.assignee &&
+      !pr.requested_reviewers.length &&
+      !pr.title.includes('WIP')
+    );
     // return pr.state === 'open' && !pr.assignee && !pr.requested_reviewers.length;
   });
 
   for (const pr of pendingPrs) {
     const prReviews = await octokit.rest.pulls.listReviews({
-      owner: 'kaleidos-ventures',
+      owner: 'taigaio',
       repo: 'taiga',
       pull_number: pr.number,
     });
@@ -138,11 +148,11 @@ async function run() {
     if (pr.requested_reviewers?.length) {
       pr.requested_reviewers.forEach((requested_reviewer) => {
         prAuthors.push(requested_reviewer.login);
-      })
+      });
     }
 
     const prReviews = await octokit.rest.pulls.listReviews({
-      owner: 'kaleidos-ventures',
+      owner: 'taigaio',
       repo: 'taiga',
       pull_number: pr.number,
     });
@@ -154,7 +164,7 @@ async function run() {
     });
 
     authors.push(...new Set(prAuthors));
-  };
+  }
 
   authors = authors.filter((author) => {
     return fronts.includes(author);
@@ -174,10 +184,10 @@ async function run() {
       console.log(msg);
 
       octokit.rest.pulls.requestReviewers({
-        owner: 'kaleidos-ventures',
+        owner: 'taigaio',
         repo: 'taiga',
         pull_number: pr.number,
-        reviewers: [user.name]
+        reviewers: [user.name],
       });
 
       assignedIds.push(pr.number);
@@ -186,7 +196,6 @@ async function run() {
       exec(command);
     }
   });
-
 
   inProgressPrs.forEach((pr) => {
     if (!assignedIds.includes(pr.number)) {
@@ -197,7 +206,9 @@ async function run() {
 
       const userNames = getMattermostNames(users);
 
-      const msg = `${pr.html_url} assigned to ${userNames.join(', ')}, open ${distance}`;
+      const msg = `${pr.html_url} assigned to ${userNames.join(
+        ', '
+      )}, open ${distance}`;
       console.log(msg);
 
       const command = `curl -i -X POST -H 'Content-Type: application/json' -d '{"text": "${msg}"}' https://chat.kaleidos.net/hooks/hqheets8ubyn7g3onr5jak94ya`;
@@ -207,4 +218,3 @@ async function run() {
 }
 
 run();
-
