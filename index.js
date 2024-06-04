@@ -20,6 +20,8 @@ const fronts = availableUsers.map((user) => user.github);
  * @description Sends a message to Mattermost.
  */
 function sendMattermostMessage(msg) {
+  console.log(`Sending Mattermost message: ${msg}`);
+
   if (!config.mattermostHook) {
     return;
   }
@@ -100,10 +102,13 @@ function getPrAssign(pr) {
 }
 
 async function run() {
+  console.log('Starting run function...');
+
   const octokit = new Octokit({
     auth: config.auth,
   });
 
+  console.log('Fetching pull requests...');
   const allPrs = await octokit.rest.pulls.list({
     owner: config.github.owner,
     repo: config.github.repo,
@@ -114,6 +119,7 @@ async function run() {
     direction: 'desc',
   });
 
+  console.log('Filtering valid pull requests...');
   const validPrs = allPrs.data.filter((pr) => {
     return fronts.includes(pr.user.login) && !pr.draft;
   });
@@ -141,12 +147,18 @@ async function run() {
     return !reviews[pr.number].data.length;
   });
 
+  if (!pendingPrs.length) {
+    console.log('No pending pull requests found.');
+    return;
+  }
+
   const inProgressPrs = validPrs.filter((pr) => {
     return pr.state === 'open' && !pr.title.includes('WIP');
   });
 
   let authors = [];
 
+  console.log('Fetching reviews for valid pull requests...');
   for (const pr of validPrs) {
     const prAuthors = [];
     if (pr.assignee?.login) {
@@ -180,6 +192,7 @@ async function run() {
 
   const assignedIds = [];
 
+  console.log('Assigning reviewers...');
   pendingPrs.forEach((pr) => {
     const user = getOlder(authors, [pr.user.login, ...config.excludeFromReview]);
 
@@ -188,6 +201,7 @@ async function run() {
       const userName = getMattermostNames([user.name])[0];
       const msg = `PR ${pr.number} by ${pr.user.login} assigned to ${userName} ${pr.html_url}`;
 
+      console.log(`Assigning reviewer for PR ${pr.number}...`);
       octokit.rest.pulls.requestReviewers({
         owner: config.github.owner,
         repo: config.github.repo,
