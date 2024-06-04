@@ -102,7 +102,7 @@ function getPrAssign(pr) {
 }
 
 async function run() {
-  console.log('Starting run function...');
+  console.log('Starting...');
 
   const octokit = new Octokit({
     auth: config.auth,
