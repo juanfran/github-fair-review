@@ -1,7 +1,7 @@
 import { Octokit } from '@octokit/rest';
 import { exec } from 'child_process';
 import { formatDistance } from 'date-fns';
-import config from './config.json' assert { type: 'json' };
+import config from './config.json' with { type: 'json' };
 
 /** @type {{[key: number]: any}} */
 const reviews = {};
