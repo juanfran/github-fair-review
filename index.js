@@ -191,6 +191,7 @@ async function run() {
   });
 
   const assignedIds = [];
+  const messages = [];
 
   console.log('Assigning reviewers...');
   pendingPrs.forEach((pr) => {
@@ -211,7 +212,7 @@ async function run() {
 
       assignedIds.push(pr.number);
 
-      sendMattermostMessage(msg);
+      messages.push(msg);
     }
   });
 
@@ -235,9 +236,13 @@ async function run() {
           ', ',
         )}, open ${distance}`;
 
-        sendMattermostMessage(msg);
+        messages.push(msg);
       }
     });
+
+  if (messages.length) {
+    sendMattermostMessage(messages.join('\\n'));
+  }
 }
 
 run();
