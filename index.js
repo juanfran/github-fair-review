@@ -202,12 +202,12 @@ async function run() {
       const userName = getMattermostNames([user.name])[0];
       const msg = `PR ${pr.number} by ${pr.user.login} assigned to ${userName} ${pr.html_url}`;
 
-      console.log(`Assigning reviewer for PR ${pr.number}...`);
-      octokit.rest.pulls.requestReviewers({
+      console.log(`Assigning assignee for PR ${pr.number}...`);
+      octokit.rest.issues.addAssignees({
         owner: config.github.owner,
         repo: config.github.repo,
-        pull_number: pr.number,
-        reviewers: [user.name],
+        issue_number: pr.number,
+        assignees: [user.name],
       });
 
       assignedIds.push(pr.number);
