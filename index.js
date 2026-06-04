@@ -134,17 +134,13 @@ async function run() {
     reviews[pr.number] = prReviews;
   }
 
-  let pendingPrs = validPrs.filter((pr) => {
+  const pendingPrs = validPrs.filter((pr) => {
     return (
       pr.state === 'open' &&
       !pr.assignee &&
       !pr.requested_reviewers.length &&
       !pr.title.includes('WIP')
     );
-  });
-
-  pendingPrs = pendingPrs.filter((pr) => {
-    return !reviews[pr.number].data.length;
   });
 
   if (!pendingPrs.length) {
