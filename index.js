@@ -152,39 +152,40 @@ async function run() {
     return pr.state === 'open' && !pr.title.includes('WIP');
   });
 
-  let authors = [];
+  console.log('Building reviewer activity log...');
+  // Each contribution is timestamped by when the review actually happened
+  // (review.submitted_at), not by the PR creation date. Ordering by creation
+  // date is wrong: a late review of an old PR would make the reviewer look
+  // overdue even though they just reviewed.
+  const contributions = [];
 
-  console.log('Fetching reviews for valid pull requests...');
   for (const pr of validPrs) {
-    const prAuthors = [];
     if (pr.assignee?.login) {
-      prAuthors.push(pr.assignee?.login);
+      contributions.push({ user: pr.assignee.login, at: pr.updated_at });
     }
 
     if (pr.requested_reviewers?.length) {
       pr.requested_reviewers.forEach((requested_reviewer) => {
-        prAuthors.push(requested_reviewer.login);
+        contributions.push({ user: requested_reviewer.login, at: pr.updated_at });
       });
     }
 
-    const prReviews = await octokit.rest.pulls.listReviews({
-      owner: config.github.owner,
-      repo: config.github.repo,
-      pull_number: pr.number,
-    });
-
-    prReviews.data.forEach((review) => {
+    reviews[pr.number].data.forEach((review) => {
       if (pr.user.login !== review.user.login) {
-        prAuthors.push(review.user.login);
+        contributions.push({
+          user: review.user.login,
+          at: review.submitted_at ?? pr.updated_at,
+        });
       }
     });
-
-    authors.push(...new Set(prAuthors));
   }
 
-  authors = authors.filter((author) => {
-    return fronts.includes(author);
-  });
+  // Newest activity first, so getOlder's indexOf picks each user's most
+  // recent review and the least-recent reviewer wins.
+  let authors = contributions
+    .sort((a, b) => new Date(b.at) - new Date(a.at))
+    .map((contribution) => contribution.user)
+    .filter((author) => fronts.includes(author));
 
   const assignedIds = [];
   const messages = [];
