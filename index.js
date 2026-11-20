@@ -7,6 +7,13 @@ import config from './config.json' with { type: 'json' };
 const reviews = {};
 
 const testMode = process.argv.includes('--test');
+const windowArg = process.argv.find((arg) => arg.startsWith('--window='));
+const prWindow = windowArg ? Number(windowArg.split('=')[1]) : 100;
+
+if (!Number.isInteger(prWindow) || prWindow < 1) {
+  console.error(`ERROR: invalid ${windowArg}, it must be a positive integer.`);
+  process.exit(1);
+}
 
 /**
  * @type {string[]}
@@ -111,29 +118,40 @@ async function run() {
   });
 
   console.log('Fetching pull requests...');
-  const allPrs = await octokit.rest.pulls.list({
-    owner: config.github.owner,
-    repo: config.github.repo,
-    state: 'all',
-    per_page: 20,
-    page: 0,
-    sort: 'created',
-    direction: 'desc',
-  });
+  const allPrs = { data: [] };
+  const perPage = Math.min(prWindow, 100);
+  for (let page = 1; allPrs.data.length < prWindow; page++) {
+    const prsPage = await octokit.rest.pulls.list({
+      owner: config.github.owner,
+      repo: config.github.repo,
+      state: 'all',
+      per_page: perPage,
+      page,
+      sort: 'created',
+      direction: 'desc',
+    });
+    allPrs.data.push(...prsPage.data);
+    if (prsPage.data.length < perPage) {
+      break;
+    }
+  }
+  allPrs.data = allPrs.data.slice(0, prWindow);
 
   console.log('Filtering valid pull requests...');
   const validPrs = allPrs.data.filter((pr) => {
     return fronts.includes(pr.user.login) && !pr.draft;
   });
 
-  for (const pr of validPrs) {
-    const prReviews = await octokit.rest.pulls.listReviews({
-      owner: config.github.owner,
-      repo: config.github.repo,
-      pull_number: pr.number,
-    });
-
-    reviews[pr.number] = prReviews;
+  for (let i = 0; i < validPrs.length; i += 10) {
+    await Promise.all(
+      validPrs.slice(i, i + 10).map(async (pr) => {
+        reviews[pr.number] = await octokit.rest.pulls.listReviews({
+          owner: config.github.owner,
+          repo: config.github.repo,
+          pull_number: pr.number,
+        });
+      }),
+    );
   }
 
   const pendingPrs = validPrs.filter((pr) => {
