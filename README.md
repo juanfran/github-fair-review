@@ -86,7 +86,7 @@ To see which pull requests would be assigned and to whom, without assigning them
 node index.js --test
 ```
 
-By default the script looks at the latest 100 pull requests. Use the `--window` parameter to change it:
+Every open pull request without assignee or reviewers gets a reviewer. To decide who has been inactive in reviews for the longest time, the script looks at the latest 100 pull requests by default. Use the `--window` parameter to change it:
 
 ```bash
 node index.js --window=100

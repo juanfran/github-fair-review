@@ -154,9 +154,18 @@ async function run() {
     );
   }
 
-  const pendingPrs = validPrs.filter((pr) => {
+  console.log('Fetching open pull requests...');
+  const openPrs = await octokit.paginate(octokit.rest.pulls.list, {
+    owner: config.github.owner,
+    repo: config.github.repo,
+    state: 'open',
+    per_page: 100,
+  });
+
+  const pendingPrs = openPrs.filter((pr) => {
     return (
-      pr.state === 'open' &&
+      fronts.includes(pr.user.login) &&
+      !pr.draft &&
       !pr.assignee &&
       !pr.requested_reviewers.length &&
       !pr.title.includes('WIP')
