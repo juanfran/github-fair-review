@@ -17,6 +17,10 @@
       "enabled": false
     }
   ],
+  "tagLists": {
+    "frontend": ["susan.github"],
+    "backend": ["john.github"]
+  },
   "excludeFromReview": [
     "susan.github"
   ]
