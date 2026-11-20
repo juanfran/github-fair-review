@@ -55,6 +55,22 @@ The script uses a configuration file `config.json` to specify various parameters
 
 - **auth**: This is the GitHub token used for authentication. You need to generate a personal access token from GitHub with the appropriate permissions to access the repository and manage pull requests.
 
+  To create it, go to GitHub **Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token** and set:
+
+  - **Resource owner**: the owner of the repository (the organization or user set in `github.owner`), not your personal account. This cannot be changed after the token is created.
+  - **Expiration**: as needed, but within the maximum lifetime allowed by the organization, if it sets one.
+  - **Repository access**: _Only select repositories_, and select the repository set in `github.repo`.
+  - **Repository permissions**:
+    - **Contents**: Read-only
+    - **Metadata**: Read-only (selected automatically)
+    - **Issues**: Read and write (reviewers are assigned through the issues assignees endpoint)
+    - **Pull requests**: Read and write
+
+  Also check that:
+
+  - If the resource owner is an organization, an organization owner has approved the token (_Organization settings → Personal access tokens → Pending requests_). Until it is approved, the token only has read access to public data, and assigning reviewers fails with `403 Resource not accessible by personal access token`.
+  - Your GitHub account has at least triage access to the repository, because a token can never do more than its owner can.
+
 - **github**: Contains information about the GitHub repository.
 
   - **owner**: The owner of the repository (usually the username or organization name).

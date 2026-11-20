@@ -45,11 +45,11 @@ function sendMattermostMessage(msg) {
  */
 function getMattermostNames(names) {
   return names.map((name) => {
-    const user = availableUsers.find((user) => {
+    const user = config.users.find((user) => {
       return user.github === name;
     });
 
-    return user.mention;
+    return user ? user.mention : name;
   });
 }
 
