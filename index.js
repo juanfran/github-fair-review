@@ -6,6 +6,8 @@ import config from './config.json' with { type: 'json' };
 /** @type {{[key: number]: any}} */
 const reviews = {};
 
+const testMode = process.argv.includes('--test');
+
 /**
  * @type {string[]}
  */
@@ -22,7 +24,7 @@ const fronts = availableUsers.map((user) => user.github);
 function sendMattermostMessage(msg) {
   console.log(`Sending Mattermost message: ${msg}`);
 
-  if (!config.mattermostHook) {
+  if (testMode || !config.mattermostHook) {
     return;
   }
 
@@ -213,15 +215,24 @@ async function run() {
     if (user) {
       authors = [user.name, ...authors];
       const userName = getMattermostNames([user.name])[0];
-      const msg = `PR ${pr.number} by ${pr.user.login} assigned to ${userName} ${pr.html_url}`;
+      let msg = `PR ${pr.number} by ${pr.user.login} assigned to ${userName} ${pr.html_url}`;
 
-      console.log(`Assigning assignee for PR ${pr.number}...`);
-      octokit.rest.issues.addAssignees({
-        owner: config.github.owner,
-        repo: config.github.repo,
-        issue_number: pr.number,
-        assignees: [user.name],
-      });
+      if (testMode && config.tagLists) {
+        const matchedLabels = pr.labels
+          .map((label) => label.name)
+          .filter((name) => config.tagLists?.[name]?.length);
+        msg += ` (labels: ${matchedLabels.join(', ')})`;
+      }
+
+      if (!testMode) {
+        console.log(`Assigning assignee for PR ${pr.number}...`);
+        octokit.rest.issues.addAssignees({
+          owner: config.github.owner,
+          repo: config.github.repo,
+          issue_number: pr.number,
+          assignees: [user.name],
+        });
+      }
 
       assignedIds.push(pr.number);
 
@@ -232,6 +243,12 @@ async function run() {
       );
     }
   });
+
+  if (testMode) {
+    console.log('Test mode: nothing assigned, no message sent.');
+    console.log(messages.join('\n'));
+    return;
+  }
 
   inProgressPrs
     .filter((pr) => {

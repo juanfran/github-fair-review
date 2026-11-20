@@ -79,3 +79,9 @@ To run the script, use the following command:
 ```bash
 node index.js
 ```
+
+To see which pull requests would be assigned and to whom, without assigning them or sending the Mattermost message, use the `--test` parameter:
+
+```bash
+node index.js --test
+```
