@@ -43,6 +43,10 @@ The script uses a configuration file `config.json` to specify various parameters
       "enabled": false
     }
   ],
+  "tagLists": {
+    "frontend": ["susan.github"],
+    "backend": ["john.github"]
+  },
   "excludeFromReview": ["susan.github"]
 }
 ```
@@ -63,6 +67,8 @@ The script uses a configuration file `config.json` to specify various parameters
   - **mention**: The Mattermost mention handle for the user.
   - **github**: The GitHub username of the user.
   - **enabled**: A boolean indicating whether the user is enabled for reviews.
+
+- **tagLists**: Optional. Maps a pull request label to a list of GitHub usernames. When a pull request has labels present here, it is only assigned to users in the list of any of those labels. If `tagLists` is set, pull requests without matching labels are skipped, and a warning is shown. If it is not set, any user can be assigned.
 
 - **excludeFromReview**: A list of GitHub usernames that should be excluded from being assigned pull requests for review. This is useful if certain users should not be involved in the review process.
 

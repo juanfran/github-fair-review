@@ -192,7 +192,23 @@ async function run() {
 
   console.log('Assigning reviewers...');
   pendingPrs.forEach((pr) => {
-    const user = getOlder(authors, [pr.user.login, ...config.excludeFromReview]);
+    const tagUsers = pr.labels.flatMap((label) => config.tagLists?.[label.name] ?? []);
+
+    if (config.tagLists && !tagUsers.length) {
+      console.warn(
+        `WARNING: PR ${pr.number} by ${pr.user.login} skipped, no matching label ${pr.html_url}`,
+      );
+      return;
+    }
+
+    const excludeByTag = tagUsers.length
+      ? fronts.filter((front) => !tagUsers.includes(front))
+      : [];
+    const user = getOlder(authors, [
+      pr.user.login,
+      ...config.excludeFromReview,
+      ...excludeByTag,
+    ]);
 
     if (user) {
       authors = [user.name, ...authors];
@@ -210,6 +226,10 @@ async function run() {
       assignedIds.push(pr.number);
 
       messages.push(msg);
+    } else {
+      console.warn(
+        `WARNING: PR ${pr.number} by ${pr.user.login} skipped, no available reviewer ${pr.html_url}`,
+      );
     }
   });
 
