@@ -6,6 +6,15 @@ import config from './config.json' with { type: 'json' };
 /** @type {{[key: number]: any}} */
 const reviews = {};
 
+const testMode = process.argv.includes('--test');
+const windowArg = process.argv.find((arg) => arg.startsWith('--window='));
+const prWindow = windowArg ? Number(windowArg.split('=')[1]) : 100;
+
+if (!Number.isInteger(prWindow) || prWindow < 1) {
+  console.error(`ERROR: invalid ${windowArg}, it must be a positive integer.`);
+  process.exit(1);
+}
+
 /**
  * @type {string[]}
  */
@@ -22,7 +31,7 @@ const fronts = availableUsers.map((user) => user.github);
 function sendMattermostMessage(msg) {
   console.log(`Sending Mattermost message: ${msg}`);
 
-  if (!config.mattermostHook) {
+  if (testMode || !config.mattermostHook) {
     return;
   }
 
@@ -36,11 +45,11 @@ function sendMattermostMessage(msg) {
  */
 function getMattermostNames(names) {
   return names.map((name) => {
-    const user = availableUsers.find((user) => {
+    const user = config.users.find((user) => {
       return user.github === name;
     });
 
-    return user.mention;
+    return user ? user.mention : name;
   });
 }
 
@@ -109,34 +118,65 @@ async function run() {
   });
 
   console.log('Fetching pull requests...');
-  const allPrs = await octokit.rest.pulls.list({
-    owner: config.github.owner,
-    repo: config.github.repo,
-    state: 'all',
-    per_page: 20,
-    page: 0,
-    sort: 'created',
-    direction: 'desc',
-  });
+  const allPrs = { data: [] };
+  const perPage = Math.min(prWindow, 100);
+  for (let page = 1; allPrs.data.length < prWindow; page++) {
+    const prsPage = await octokit.rest.pulls.list({
+      owner: config.github.owner,
+      repo: config.github.repo,
+      state: 'all',
+      per_page: perPage,
+      page,
+      sort: 'created',
+      direction: 'desc',
+    });
+    allPrs.data.push(...prsPage.data);
+    if (prsPage.data.length < perPage) {
+      break;
+    }
+  }
+  allPrs.data = allPrs.data.slice(0, prWindow);
 
   console.log('Filtering valid pull requests...');
   const validPrs = allPrs.data.filter((pr) => {
     return fronts.includes(pr.user.login) && !pr.draft;
   });
 
-  for (const pr of validPrs) {
-    const prReviews = await octokit.rest.pulls.listReviews({
-      owner: config.github.owner,
-      repo: config.github.repo,
-      pull_number: pr.number,
-    });
+  /**
+   * Fetches the reviews of the given PRs that are not fetched yet, in batches
+   * of 10 to avoid GitHub's secondary rate limit.
+   * @param {any[]} prs - Pull request objects.
+   */
+  async function fetchReviews(prs) {
+    const missing = prs.filter((pr) => !reviews[pr.number]);
 
-    reviews[pr.number] = prReviews;
+    for (let i = 0; i < missing.length; i += 10) {
+      await Promise.all(
+        missing.slice(i, i + 10).map(async (pr) => {
+          reviews[pr.number] = await octokit.rest.pulls.listReviews({
+            owner: config.github.owner,
+            repo: config.github.repo,
+            pull_number: pr.number,
+          });
+        }),
+      );
+    }
   }
 
-  const pendingPrs = validPrs.filter((pr) => {
+  await fetchReviews(validPrs);
+
+  console.log('Fetching open pull requests...');
+  const openPrs = await octokit.paginate(octokit.rest.pulls.list, {
+    owner: config.github.owner,
+    repo: config.github.repo,
+    state: 'open',
+    per_page: 100,
+  });
+
+  const pendingPrs = openPrs.filter((pr) => {
     return (
-      pr.state === 'open' &&
+      fronts.includes(pr.user.login) &&
+      !pr.draft &&
       !pr.assignee &&
       !pr.requested_reviewers.length &&
       !pr.title.includes('WIP')
@@ -148,8 +188,12 @@ async function run() {
     return;
   }
 
-  const inProgressPrs = validPrs.filter((pr) => {
-    return pr.state === 'open' && !pr.title.includes('WIP');
+  // Reminders cover every open PR, not only the ones inside --window, so an
+  // old PR assigned on a previous run keeps showing up until it is approved.
+  const inProgressPrs = openPrs.filter((pr) => {
+    return (
+      fronts.includes(pr.user.login) && !pr.draft && !pr.title.includes('WIP')
+    );
   });
 
   console.log('Building reviewer activity log...');
@@ -191,27 +235,73 @@ async function run() {
   const messages = [];
 
   console.log('Assigning reviewers...');
-  pendingPrs.forEach((pr) => {
-    const user = getOlder(authors, [pr.user.login, ...config.excludeFromReview]);
+  // Sequential on purpose: GitHub recommends pacing mutative requests, and a
+  // failed assignment must not be announced.
+  for (const pr of pendingPrs) {
+    const tagUsers = pr.labels.flatMap((label) => config.tagLists?.[label.name] ?? []);
+
+    if (config.tagLists && !tagUsers.length) {
+      console.warn(
+        `WARNING: PR ${pr.number} by ${pr.user.login} skipped, no matching label ${pr.html_url}`,
+      );
+      continue;
+    }
+
+    const excludeByTag = tagUsers.length
+      ? fronts.filter((front) => !tagUsers.includes(front))
+      : [];
+    const user = getOlder(authors, [
+      pr.user.login,
+      ...config.excludeFromReview,
+      ...excludeByTag,
+    ]);
 
     if (user) {
-      authors = [user.name, ...authors];
       const userName = getMattermostNames([user.name])[0];
-      const msg = `PR ${pr.number} by ${pr.user.login} assigned to ${userName} ${pr.html_url}`;
+      let msg = `PR ${pr.number} by ${pr.user.login} assigned to ${userName} ${pr.html_url}`;
 
-      console.log(`Assigning assignee for PR ${pr.number}...`);
-      octokit.rest.issues.addAssignees({
-        owner: config.github.owner,
-        repo: config.github.repo,
-        issue_number: pr.number,
-        assignees: [user.name],
-      });
+      if (testMode && config.tagLists) {
+        const matchedLabels = pr.labels
+          .map((label) => label.name)
+          .filter((name) => config.tagLists?.[name]?.length);
+        msg += ` (labels: ${matchedLabels.join(', ')})`;
+      }
 
+      if (!testMode) {
+        console.log(`Assigning assignee for PR ${pr.number}...`);
+        try {
+          await octokit.rest.issues.addAssignees({
+            owner: config.github.owner,
+            repo: config.github.repo,
+            issue_number: pr.number,
+            assignees: [user.name],
+          });
+        } catch (error) {
+          console.error(
+            `ERROR: could not assign PR ${pr.number} to ${user.name}: ${error.message} ${pr.html_url}`,
+          );
+          continue;
+        }
+      }
+
+      authors = [user.name, ...authors];
       assignedIds.push(pr.number);
 
       messages.push(msg);
+    } else {
+      console.warn(
+        `WARNING: PR ${pr.number} by ${pr.user.login} skipped, no available reviewer ${pr.html_url}`,
+      );
     }
-  });
+  }
+
+  if (testMode) {
+    console.log('Test mode: nothing assigned, no message sent.');
+    console.log(messages.join('\n'));
+    return;
+  }
+
+  await fetchReviews(inProgressPrs);
 
   inProgressPrs
     .filter((pr) => {
@@ -223,6 +313,13 @@ async function run() {
     .forEach((pr) => {
       if (!assignedIds.includes(pr.number)) {
         const users = getPrAssign(pr);
+
+        // Nobody to remind: skipped by label, no available reviewer, or the
+        // assignment just failed.
+        if (!users.length) {
+          return;
+        }
+
         const now = new Date();
         const prDate = new Date(pr.created_at);
         const distance = formatDistance(prDate, now, { addSuffix: true });
