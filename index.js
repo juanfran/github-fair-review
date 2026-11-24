@@ -142,17 +142,28 @@ async function run() {
     return fronts.includes(pr.user.login) && !pr.draft;
   });
 
-  for (let i = 0; i < validPrs.length; i += 10) {
-    await Promise.all(
-      validPrs.slice(i, i + 10).map(async (pr) => {
-        reviews[pr.number] = await octokit.rest.pulls.listReviews({
-          owner: config.github.owner,
-          repo: config.github.repo,
-          pull_number: pr.number,
-        });
-      }),
-    );
+  /**
+   * Fetches the reviews of the given PRs that are not fetched yet, in batches
+   * of 10 to avoid GitHub's secondary rate limit.
+   * @param {any[]} prs - Pull request objects.
+   */
+  async function fetchReviews(prs) {
+    const missing = prs.filter((pr) => !reviews[pr.number]);
+
+    for (let i = 0; i < missing.length; i += 10) {
+      await Promise.all(
+        missing.slice(i, i + 10).map(async (pr) => {
+          reviews[pr.number] = await octokit.rest.pulls.listReviews({
+            owner: config.github.owner,
+            repo: config.github.repo,
+            pull_number: pr.number,
+          });
+        }),
+      );
+    }
   }
+
+  await fetchReviews(validPrs);
 
   console.log('Fetching open pull requests...');
   const openPrs = await octokit.paginate(octokit.rest.pulls.list, {
@@ -177,8 +188,12 @@ async function run() {
     return;
   }
 
-  const inProgressPrs = validPrs.filter((pr) => {
-    return pr.state === 'open' && !pr.title.includes('WIP');
+  // Reminders cover every open PR, not only the ones inside --window, so an
+  // old PR assigned on a previous run keeps showing up until it is approved.
+  const inProgressPrs = openPrs.filter((pr) => {
+    return (
+      fronts.includes(pr.user.login) && !pr.draft && !pr.title.includes('WIP')
+    );
   });
 
   console.log('Building reviewer activity log...');
@@ -220,14 +235,16 @@ async function run() {
   const messages = [];
 
   console.log('Assigning reviewers...');
-  pendingPrs.forEach((pr) => {
+  // Sequential on purpose: GitHub recommends pacing mutative requests, and a
+  // failed assignment must not be announced.
+  for (const pr of pendingPrs) {
     const tagUsers = pr.labels.flatMap((label) => config.tagLists?.[label.name] ?? []);
 
     if (config.tagLists && !tagUsers.length) {
       console.warn(
         `WARNING: PR ${pr.number} by ${pr.user.login} skipped, no matching label ${pr.html_url}`,
       );
-      return;
+      continue;
     }
 
     const excludeByTag = tagUsers.length
@@ -240,7 +257,6 @@ async function run() {
     ]);
 
     if (user) {
-      authors = [user.name, ...authors];
       const userName = getMattermostNames([user.name])[0];
       let msg = `PR ${pr.number} by ${pr.user.login} assigned to ${userName} ${pr.html_url}`;
 
@@ -253,14 +269,22 @@ async function run() {
 
       if (!testMode) {
         console.log(`Assigning assignee for PR ${pr.number}...`);
-        octokit.rest.issues.addAssignees({
-          owner: config.github.owner,
-          repo: config.github.repo,
-          issue_number: pr.number,
-          assignees: [user.name],
-        });
+        try {
+          await octokit.rest.issues.addAssignees({
+            owner: config.github.owner,
+            repo: config.github.repo,
+            issue_number: pr.number,
+            assignees: [user.name],
+          });
+        } catch (error) {
+          console.error(
+            `ERROR: could not assign PR ${pr.number} to ${user.name}: ${error.message} ${pr.html_url}`,
+          );
+          continue;
+        }
       }
 
+      authors = [user.name, ...authors];
       assignedIds.push(pr.number);
 
       messages.push(msg);
@@ -269,13 +293,15 @@ async function run() {
         `WARNING: PR ${pr.number} by ${pr.user.login} skipped, no available reviewer ${pr.html_url}`,
       );
     }
-  });
+  }
 
   if (testMode) {
     console.log('Test mode: nothing assigned, no message sent.');
     console.log(messages.join('\n'));
     return;
   }
+
+  await fetchReviews(inProgressPrs);
 
   inProgressPrs
     .filter((pr) => {
@@ -287,6 +313,13 @@ async function run() {
     .forEach((pr) => {
       if (!assignedIds.includes(pr.number)) {
         const users = getPrAssign(pr);
+
+        // Nobody to remind: skipped by label, no available reviewer, or the
+        // assignment just failed.
+        if (!users.length) {
+          return;
+        }
+
         const now = new Date();
         const prDate = new Date(pr.created_at);
         const distance = formatDistance(prDate, now, { addSuffix: true });
